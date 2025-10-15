@@ -1,0 +1,57 @@
+# Node.js (FactFinit-backend)
+node_modules/
+dist/
+npm-debug.log
+yarn-error.log
+yarn.lock
+package-lock.json
+.env
+*.log
+
+# Python (rag)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.env
+*.egg-info/
+.pypirc
+*.ipynb_checkpoints/
+
+# ChromaDB
+database/
+
+# CSV Data (exclude large dataset)
+rag/IndianFinancialNews.csv
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.sublime-project
+*.sublime-workspace
+
+# OS and temporary files
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*.swp
+*~
+
+# Build and runtime artifacts
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage and test reports
+coverage/
+*.cov
+*.xml
+*.lcov

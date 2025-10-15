@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./FactFinit-backend
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongo
+      - rag
+
+  mongo:
+    image: mongo:6
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  rag:
+    build:
+      context: ./rag
+    ports:
+      - "8000:8000"
+    volumes:
+      - rag_data:/data/db  # optional, if RAG needs a DB
+
+volumes:
+  mongo_data:
+  rag_data:
