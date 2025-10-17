@@ -1,305 +1,215 @@
-# FactFinit Backend
+# FactFinit RAG API
 
 ## Installation
 ```bash
-npm install
+pip install fastapi pydantic python-dotenv pandas chromadb sentence-transformers google-generativeai uvicorn
 ```
 
 ## Environment Setup
 
 Create `.env` file:
 ```env
-PORT=5000
-MONGODB_URI=mongodb://localhost:27017/factfinit
-JWT_SECRET=your-secure-jwt-secret
 GEMINI_API_KEY=your-gemini-api-key
-RAG_API_URL=http://localhost:8001/query
+```
+
+## Configuration
+
+Update paths in main file:
+```python
+DB_PATH = "./database"           # ChromaDB storage path
+CSV_PATH = "sample_IndianFinancialNews.csv"  # Financial news dataset
 ```
 
 ## Run
 ```bash
 # Development
-npm run dev
+uvicorn main:app --reload --host 0.0.0.0 --port 8001
 
 # Production
-npm run build
-npm start
+uvicorn main:app --host 0.0.0.0 --port 8001
 ```
 
-## API Endpoints
+## API Endpoint
 
-### Authentication
-
-#### Register
+### Query Financial Data
 ```http
-POST /api/auth/register
+POST /query
 Content-Type: application/json
 
 {
-  "email": "user@example.com",
-  "password": "password123"
+  "query": "What was the gold price in 2015?"
 }
 ```
 
 **Response:**
 ```json
 {
-  "message": "User registered successfully",
-  "token": "eyJhbGc..."
+  "answer": "Based on financial news from 2015, the average gold price was approximately Rs 26,400 per 10g..."
 }
 ```
 
-#### Login
-```http
-POST /api/auth/login
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "password": "password123"
-}
-```
-
-**Response:**
+**Out of Context Response:**
 ```json
 {
-  "message": "Login successful",
-  "token": "eyJhbGc..."
+  "answer": "OUT OF CONTEXT"
 }
 ```
 
-### Video Verification
+## How It Works
 
-#### Verify Video
-```http
-POST /api/verify
-Authorization: Bearer <token>
-Content-Type: application/json
+### 1. Database Loading
+- Reads CSV file with columns: `Date`, `Title`, `Description`
+- Converts to embeddings using `all-MiniLM-L6-v2` model
+- Stores in ChromaDB (persistent vector database)
+- Auto-loads on first startup if database empty
 
-{
-  "videoURL": "https://www.youtube.com/watch?v=VIDEO_ID",
-  "platform": "YouTube",
-  "language": "en"
-}
+### 2. Query Processing
+1. User sends query
+2. Query embedded using same model
+3. ChromaDB retrieves top 5 relevant passages (sorted by date, newest first)
+4. Passages combined into context prompt
+5. Gemini AI generates answer based on context
+6. Returns "OUT OF CONTEXT" if query unrelated to financial data
+
+### 3. Embedding Model
+```python
+SentenceTransformer("all-MiniLM-L6-v2")
+# Free, local, 384-dimensional embeddings
+# Fast encoding with batching support
 ```
 
-**Response:**
-```json
+## CSV Format
+
+Required columns:
+```csv
+Date,Title,Description
+2015-01-15,"Gold Prices Rise","Gold prices increased to Rs 26,400 per 10g..."
+2015-02-20,"Market Update","Stock market shows strong performance..."
+```
+
+## Database Structure
+
+### ChromaDB Collection
+```python
 {
-  "message": "Transcript processed successfully",
-  "data": {
-    "videoURL": "https://www.youtube.com/watch?v=VIDEO_ID",
-    "platform": "YouTube",
-    "transcript": { "en": [...] },
-    "normalizedTranscript": "The video discusses...",
-    "isFinancial": true,
-    "factCheck": {
-      "claims": [
-        {
-          "claim": "Gold was Rs 3000 in 2015",
-          "isAccurate": false,
-          "explanation": "Average gold price in 2015 was Rs 26,400 per 10g..."
-        }
-      ],
-      "sources": [
-        {
-          "title": "Gold Rate Trends",
-          "url": "https://example.com",
-          "snippet": "Historical data..."
-        }
-      ]
+  "name": "csv_db",
+  "documents": ["Title: ...\nDescription: ..."],
+  "metadatas": [
+    {
+      "date": "2015-01-15",
+      "title": "Gold Prices Rise",
+      "description": "Gold prices increased..."
     }
-  }
+  ],
+  "ids": ["doc_0", "doc_1", ...]
 }
 ```
 
-#### Get All Verified Videos
-```http
-GET /api/verify?page=1&limit=10
-Authorization: Bearer <token>
+## Functions
+
+### Load CSV to Database
+```python
+load_csv_to_db(csv_path)
+# Encodes all documents in batches of 32
+# Inserts to ChromaDB in chunks of 5000
+# Returns total document count
 ```
 
-**Response:**
+### Get Relevant Passages
+```python
+get_relevant_passages(query, n_results=5)
+# Returns top 5 passages sorted by date (newest first)
+# Returns: [(document, metadata), ...]
+```
+
+### Make Prompt
+```python
+make_prompt(query, passages)
+# Combines query with context passages
+# Instructs Gemini to respond or say "OUT OF CONTEXT"
+```
+
+## CORS Configuration
+```python
+allow_origins=["*"]  # Change to specific domains in production
+allow_credentials=True
+allow_methods=["*"]
+allow_headers=["*"]
+```
+
+## Error Handling
+
+### Empty Database
 ```json
 {
-  "message": "Fact-checked videos retrieved successfully",
-  "data": {
-    "transcripts": [...],
-    "pagination": {
-      "total": 25,
-      "page": 1,
-      "limit": 10,
-      "totalPages": 3
-    }
-  }
+  "detail": "Database empty. Add CSV first."
 }
 ```
 
-### History
-
-#### Get Search History
-```http
-GET /api/history?page=1&limit=10
-Authorization: Bearer <token>
+### Missing CSV
+```
+❌ CSV file not found at sample_IndianFinancialNews.csv. Please check path.
 ```
 
-**Response:** Same format as `/api/verify` GET
-
-## Database Models
-
-### User
-```typescript
+### Gemini API Error
+```json
 {
-  _id: ObjectId,
-  email: string,
-  password: string,  // bcrypt hashed
-  createdAt: Date,
-  updatedAt: Date
+  "detail": "API error message"
 }
 ```
 
-### Transcript
+## Batch Processing
+
+- **Embedding Batch Size:** 32 documents
+- **ChromaDB Insert Batch:** 5000 documents
+- Prevents memory overflow for large datasets
+- Shows progress during loading
+
+## Logging
+```
+📦 Database empty. Loading CSV embeddings...
+Encoding embeddings...
+✅ Inserted batch 1/3 (5000 / 12000 docs)
+✅ Inserted batch 2/3 (10000 / 12000 docs)
+✅ Inserted batch 3/3 (12000 / 12000 docs)
+🎉 Successfully loaded 12000 documents into ChromaDB.
+```
+
+## Integration with Backend
+
+Backend calls RAG API:
 ```typescript
-{
-  videoURL: string,
-  platform: "YouTube" | "Instagram",
-  transcript: Record<string, TranscriptSegment[]>,
-  normalizedTranscript: string,
-  isFinancial: boolean,
-  factCheck: {
-    claims: Array<{
-      claim: string,
-      isAccurate: boolean,
-      explanation: string
-    }>,
-    sources: Array<{
-      title: string,
-      url: string,
-      snippet: string
-    }>
-  },
-  user: ObjectId,
-  createdAt: Date
-}
+const ragResponse = await axios.post(
+  'http://localhost:8001/query',
+  { query: transcriptText },
+  { timeout: 15000 }
+);
+
+const { answer, passages } = ragResponse.data;
 ```
 
-## Supported Platforms
+## Performance
 
-- YouTube (`youtube.com`, `youtu.be`)
-- Instagram (`instagram.com`) - extraction not implemented
-
-## Supported Languages
-
-- English (en)
-- Hindi (hi)
-- Tamil (ta)
-- Bengali (bn)
-- Marathi (mr)
-
-## Services
-
-### Fact Checker (`src/services/factChecker.ts`)
-
-**Gemini AI:**
-- Normalizes transcripts to English
-- Detects financial content
-- Identifies and verifies claims
-- Provides 100-200 word explanations
-
-**RAG API:**
-- Retrieves relevant financial news
-- Provides real-time fact verification
-- Returns credible sources
-
-**Merge Logic:**
-- Prioritizes RAG for financial content
-- Falls back to Gemini if RAG fails
-
-### YouTube Transcript (`src/services/youtubeTranscript.ts`)
-```typescript
-await fetchYouTubeTranscript(videoId, ['en', 'hi', 'ta', 'bn', 'mr'])
-```
-
-## Middleware
-
-### Authentication (`src/middleware/auth.ts`)
-```typescript
-// Validates JWT token
-// Attaches user to req.user
-// Returns 401/403 on invalid token
-```
-
-### Error Handler (`src/middleware/errorHandler.ts`)
-```typescript
-// Catches all errors
-// Returns 400 with error message
-```
-
-## Utils
-
-### Platform Detector (`src/utils/platformDetector.ts`)
-```typescript
-detectPlatform(url) // Returns 'YouTube' | 'Instagram' | 'Unknown'
-```
-
-### YouTube ID Extractor (`src/utils/youtubeIdExtractor.ts`)
-```typescript
-extractYouTubeId(url) // Returns 11-char video ID or empty string
-```
-
-## Caching
-
-- Transcripts cached per user + video URL
-- 7-day TTL (automatic expiration)
-- Subsequent requests return cached results instantly
-
-## Error Logging
-
-Fact-checking errors logged to:
-```
-fact_checker_errors.log
-```
-
-Format:
-```
-[2025-10-18T12:34:56.789Z] Error description: {
-  "error": "...",
-  "transcript": "..."
-}
-```
-
-## Authentication Flow
-
-1. User registers/logs in → JWT token issued (1 hour expiry)
-2. Token sent in `Authorization: Bearer <token>` header
-3. Middleware validates token and attaches user to request
-4. Protected routes access `req.user.id` and `req.user.email`
+- **Embedding Model:** 384 dimensions
+- **Vector Search:** Fast similarity search with ChromaDB
+- **Batch Encoding:** ~1000 docs/second on CPU
+- **Query Time:** <1 second for 5 results
 
 ## Deployment
 
-Configured for:
-- Render
-- Heroku
-- Railway
-
 **Requirements:**
-- Node.js 20.x
-- MongoDB instance
+- Python 3.8+
+- CSV file with financial news
 - Gemini API key
-- RAG API running separately
 
-**Start Command:**
-```bash
-npm start
-```
+**Port:** 8001 (configurable)
 
-**Port:**
-- Listens on `0.0.0.0:${PORT}` for external access
+**Storage:** `./database` directory for ChromaDB persistence
 
 ## Notes
 
-- Max transcript length: 5000 characters
-- JWT tokens expire in 1 hour
-- MongoDB connection required on startup
-- Instagram transcript service not implemented
-- RAG API must be available at configured URL
+- Database persists between restarts
+- Only loads CSV if database empty
+- Returns most recent relevant passages first
+- Free local embeddings (no API costs)
+- Gemini used only for final answer generation
