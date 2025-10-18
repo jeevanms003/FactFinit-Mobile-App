@@ -217,7 +217,7 @@ All translated to English for fact-checking.
 
 ## What It Can Do
 
-✅ Verify YouTube financial claims  
+✅ Verify YouTube and Instagram financial claims  
 ✅ Multi-language transcript support  
 ✅ AI-powered fact-checking  
 ✅ Detailed explanations with sources  
@@ -229,7 +229,6 @@ All translated to English for fact-checking.
 
 ## What It Cannot Do
 
-❌ Instagram transcript extraction  
 ❌ Non-financial content verification  
 ❌ Videos without transcripts  
 ❌ Transcripts > 5000 characters (truncated)  
